@@ -37,8 +37,15 @@ namespace Telegram {
 
         void replyImpl(const TgBot::Message::Ptr &message, const std::string &text);
 
+        void sendMenu(const TgBot::Message::Ptr &message);
+        void editScreen(const TgBot::Message::Ptr &message, const std::string &callbackData);
+
+        std::string mainMenuText() const;
+        std::string queriesText() const;
+
         void handleStart(TgBot::Message::Ptr message);
         void handleAdd(TgBot::Message::Ptr message);
+        void handleCallback(TgBot::CallbackQuery::Ptr query);
 
         TgBot::Bot &bot_;
         queries::QueryStore &queryStore_;

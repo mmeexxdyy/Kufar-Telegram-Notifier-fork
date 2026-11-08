@@ -34,6 +34,27 @@ namespace queries {
 
             return joinedAreas;
         }
+
+        /**
+          Returns a compact price range, for example "100–800 BYN",
+          or an empty string when no bounds are set.
+         */
+        string compactPriceRange(const PriceRange &priceRange) {
+            const optional<int> &priceMin = priceRange.priceMin;
+            const optional<int> &priceMax = priceRange.priceMax;
+
+            if (priceMin.has_value() && priceMax.has_value()) {
+                return to_string(priceMin.value()) + "–" + to_string(priceMax.value()) + " BYN";
+            }
+            if (priceMin.has_value()) {
+                return "от " + to_string(priceMin.value()) + " BYN";
+            }
+            if (priceMax.has_value()) {
+                return "до " + to_string(priceMax.value()) + " BYN";
+            }
+
+            return "";
+        }
     }
 
     string QueryConfiguration::cacheKey() const {
@@ -88,6 +109,42 @@ namespace queries {
             (this->kufar.region.has_value() ? EnumString::region(this->kufar.region.value()) : PROPERTY_UNDEFINED),
             joinAreas(this->kufar.areas)
         );
+    }
+
+    string QueryConfiguration::shortDescription() const {
+        vector<string> parts;
+
+        if (kufar.tag.has_value() && !kufar.tag->empty()) {
+            parts.push_back("#" + kufar.tag.value());
+        } else {
+            parts.push_back("без ключевого слова");
+        }
+
+        if (const string price = compactPriceRange(kufar.priceRange); !price.empty()) {
+            parts.push_back(price);
+        }
+        if (kufar.region.has_value()) {
+            parts.push_back(EnumString::region(kufar.region.value()));
+        }
+        if (kufar.category.has_value()) {
+            parts.push_back(EnumString::category(kufar.category.value()));
+        }
+
+        parts.push_back(
+            messageThreadID.has_value()
+                ? "тема " + to_string(messageThreadID.value())
+                : "основной чат"
+        );
+
+        string description;
+        for (size_t i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                description += " · ";
+            }
+            description += parts[i];
+        }
+
+        return description;
     }
 
     QueryConfiguration parseQuery(const json &query) {

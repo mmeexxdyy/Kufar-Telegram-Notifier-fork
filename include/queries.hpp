@@ -24,6 +24,8 @@ namespace queries {
 
         std::string cacheKey() const;  
         std::string getDescription() const;
+        // One-line summary for the Telegram menu, without trailing newlines.
+        std::string shortDescription() const;
     };
 
     QueryConfiguration parseQuery(const nlohmann::json &query);
