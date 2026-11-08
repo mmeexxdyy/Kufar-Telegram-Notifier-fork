@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <ctime>
 #include <exception>
 #include <memory>
@@ -20,6 +21,7 @@
 #include "telegram.hpp"
 #include "telegram_commands.hpp"
 #include "queries.hpp"
+#include "helperfunctions.hpp"
 
 namespace Telegram {
     using namespace std;
@@ -29,27 +31,76 @@ namespace Telegram {
         constexpr size_t MAX_IMAGES_IN_GROUP = 10;
 
         /**
-          Builds the ad text. Same format as was used
-          when sending through the HTTP API.
+          Formats the price stored in kopecks as a human-readable
+          BYN amount with thousands separators.
          */
-        string formatAdvert(const Kufar::Ad &ad) {
-            string formattedTime = ctime(&ad.date);
-            formattedTime.pop_back();
-
-            string text;
-
-            if (ad.tag.has_value()) {
-                text += "#" + ad.tag.value() + "\n";
+        string formatPrice(int priceInKopecks) {
+            if (priceInKopecks <= 0) {
+                return "цена не указана";
             }
 
-            text += "Название: " + ad.title + "\n"
-                    "Дата: " + formattedTime + "\n"
-                    "Цена: " + to_string(ad.price / 100) + " BYN\n\n"
-                    "Имя продавца: " + ad.sellerName + "\n"
-                    "Номер телефона не скрыт: " + (ad.phoneNumberIsVisible ? "Да" : "Нет") + "\n"
-                    "Ссылка: " + ad.link;
+            string digits = to_string(priceInKopecks / 100);
+            for (ptrdiff_t position = static_cast<ptrdiff_t>(digits.size()) - 3;
+                 position > 0;
+                 position -= 3) {
+                digits.insert(static_cast<size_t>(position), " ");
+            }
+
+            return digits + " BYN";
+        }
+
+        /**
+          Formats the listing date in the server's local time.
+          Returns an empty string for missing dates.
+         */
+        string formatDate(time_t date) {
+            if (date == 0) {
+                return "";
+            }
+
+            tm localTime{};
+            localtime_r(&date, &localTime);
+
+            char buffer[32] = {};
+            strftime(buffer, sizeof(buffer), "%d.%m.%Y %H:%M", &localTime);
+            return buffer;
+        }
+
+        /**
+          Builds the caption of a listing. The text is parsed as HTML,
+          so every value that comes from Kufar is escaped.
+         */
+        string formatAdvert(const Kufar::Ad &ad) {
+            string text;
+
+            if (ad.tag.has_value() && !ad.tag->empty()) {
+                text += "🏷 <b>#" + escapeHTML(ad.tag.value()) + "</b>\n\n";
+            }
+
+            text += "🛍 <b>" + escapeHTML(ad.title) + "</b>\n";
+            text += "💰 <b>" + formatPrice(ad.price) + "</b>\n";
+
+            if (const string date = formatDate(ad.date); !date.empty()) {
+                text += "🕒 " + date + "\n";
+            }
+
+            text += "\n👤 " + escapeHTML(ad.sellerName);
+            text += ad.phoneNumberIsVisible ? " · телефон показан" : " · телефон скрыт";
 
             return text;
+        }
+
+        /**
+          Adds the "open on Kufar" button to every listing.
+         */
+        TgBot::InlineKeyboardMarkup::Ptr advertKeyboard(const Kufar::Ad &ad) {
+            auto button = make_shared<TgBot::InlineKeyboardButton>();
+            button->text = "🔗 Открыть на Kufar";
+            button->url = ad.link;
+
+            auto markup = make_shared<TgBot::InlineKeyboardMarkup>();
+            markup->inlineKeyboard = {{button}};
+            return markup;
         }
 
         int32_t messageThreadID(const optional<int> &threadID) {
@@ -73,45 +124,46 @@ namespace Telegram {
         const string text = formatAdvert(ad);
         const int32_t threadIDValue = messageThreadID(threadID);
         const TgBot::Api &api = bot_->getApi();
+        const TgBot::InlineKeyboardMarkup::Ptr keyboard = advertKeyboard(ad);
+        const size_t imageCount = min(ad.images.size(), MAX_IMAGES_IN_GROUP);
 
-        if (ad.images.empty()) {
-            // sendMediaGroup requires 2-10 images, and sendPhoto with
-            // a nonexistent placeholder URL always failed.
-            TgBot::SendMessageArgs args;
-            args.chatId = configuration_.chatID;
-            args.text = text;
-            args.messageThreadId = threadIDValue;
-            api.sendMessage(args);
-            return;
+        // Telegram does not accept reply_markup for media groups, so an album
+        // is sent first and a separate card with the button follows it.
+        if (imageCount > 1) {
+            TgBot::SendMediaGroupArgs albumArgs;
+            albumArgs.chatId = configuration_.chatID;
+            albumArgs.messageThreadId = threadIDValue;
+            albumArgs.media.reserve(imageCount);
+
+            for (size_t i = 0; i < imageCount; i++) {
+                auto photo = make_shared<TgBot::InputMediaPhoto>();
+                photo->media = ad.images[i];
+                albumArgs.media.push_back(photo);
+            }
+
+            api.sendMediaGroup(albumArgs);
         }
 
-        if (ad.images.size() == 1) {
+        if (imageCount == 1) {
             TgBot::SendPhotoArgs args;
             args.chatId = configuration_.chatID;
             args.photo = ad.images.front();
             args.caption = text;
+            args.parseMode = "HTML";
+            args.replyMarkup = keyboard;
             args.messageThreadId = threadIDValue;
             api.sendPhoto(args);
             return;
         }
 
-        TgBot::SendMediaGroupArgs args;
+        // Listings without photos, and cards that follow an album.
+        TgBot::SendMessageArgs args;
         args.chatId = configuration_.chatID;
+        args.text = text;
+        args.parseMode = "HTML";
+        args.replyMarkup = keyboard;
         args.messageThreadId = threadIDValue;
-
-        const size_t imageCount = min(ad.images.size(), MAX_IMAGES_IN_GROUP);
-        args.media.reserve(imageCount);
-
-        for (size_t i = 0; i < imageCount; i++) {
-            auto photo = make_shared<TgBot::InputMediaPhoto>();
-            photo->media = ad.images[i];
-            if (i == 0) {
-                photo->caption = text;
-            }
-            args.media.push_back(photo);
-        }
-
-        api.sendMediaGroup(args);
+        api.sendMessage(args);
     }
 
     void Client::startPolling() {

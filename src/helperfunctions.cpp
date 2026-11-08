@@ -5,7 +5,6 @@
 //  Created by Macintosh on 04.06.2022.
 //
 
-#include <pstl/glue_algorithm_defs.h>
 #include <stdexcept>
 #include <vector>
 #include <fstream>
@@ -98,6 +97,30 @@ void saveFile(const string &path, const string &contents) {
         std::remove(tmpPath.c_str());
         throw runtime_error("Couldn't rename the temporary file during saving");
     }
+}
+
+string escapeHTML(const string &text) {
+    string escaped;
+    escaped.reserve(text.size());
+
+    for (const char character : text) {
+        switch (character) {
+            case '&':
+                escaped += "&amp;";
+                break;
+            case '<':
+                escaped += "&lt;";
+                break;
+            case '>':
+                escaped += "&gt;";
+                break;
+            default:
+                escaped += character;
+                break;
+        }
+    }
+
+    return escaped;
 }
 
 string maskToken(const string &token) {

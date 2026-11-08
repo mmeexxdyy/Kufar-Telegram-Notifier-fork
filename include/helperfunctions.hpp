@@ -138,4 +138,10 @@ void saveFile(const std::string &path, const std::string &contents);
  */
 std::string maskToken(const std::string &token);
 
+/**
+  Escapes the characters that Telegram's HTML parse mode
+  treats as markup (&, < and >).
+ */
+std::string escapeHTML(const std::string &text);
+
 #endif /* helperfunctions_hpp */
