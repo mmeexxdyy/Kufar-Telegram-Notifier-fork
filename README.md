@@ -12,7 +12,7 @@ A small self-hosted bot that watches [Kufar](https://kufar.by) for new listings 
 2. New listings are sent to the Telegram chat. If a query has `message-thread-id`, its listings go to that topic; otherwise they go to the chat's General topic.
 3. Sent listing IDs are stored in `cached-data.json`, separately for every topic, so the same listing is not posted twice.
 4. After all queries have run, the bot waits for the configured loop delay and starts again. It runs in the foreground until stopped.
-5. In parallel, the bot receives Telegram updates through long polling. No public IP or webhook is required; it currently answers `/start` and `/ping`.
+5. In parallel, the bot receives Telegram updates through long polling. No public IP or webhook is required; it answers `/start` and `/add` and serves the inline-button menu.
 
 Telegram messages produced by the bot are currently written in Russian.
 
@@ -135,8 +135,18 @@ The bot uses long polling (`getUpdates`), so it can receive commands without a p
 
 | Command | Description |
 | --- | --- |
-| `/start` | Show a short description of the bot. |
-| `/ping` | Reply with `pong`; useful for checking that polling works. |
+| `/start` | Open the bot menu with inline buttons. |
+| `/add <url>` | Add a search from a Kufar search-results URL. The feed is posted to the topic where the command was sent. |
+
+### Chat interface
+
+`/start` opens a menu with inline buttons:
+
+- **Мои поиски** — the configured feeds with their price range, region and topic.
+- **Добавить поиск** — how to add a feed with `/add`.
+- **Помощь** — command reference.
+
+Every listing is sent as a formatted card: hashtag, title, price, date and seller, followed by an **Открыть на Kufar** button that opens the listing page.
 
 ## Configuration
 
