@@ -42,8 +42,8 @@ namespace Telegram {
 
         void replyImpl(const TgBot::Message::Ptr &message, const std::string &text);
 
-        void sendMenu(const TgBot::Message::Ptr &message);
         void showScreen(const TgBot::Message::Ptr &message, const std::string &screen, bool editCurrentMessage);
+        void deleteTriggerMessage(const TgBot::Message::Ptr &message);
 
         void rememberScreen(std::int64_t chatId, std::int32_t threadId, std::int32_t messageId);
         std::int32_t findScreen(std::int64_t chatId, std::int32_t threadId) const;

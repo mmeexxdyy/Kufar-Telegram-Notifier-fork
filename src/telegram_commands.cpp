@@ -31,6 +31,7 @@ namespace Telegram {
         const string BUTTON_QUERIES = "🔎 Мои поиски";
         const string BUTTON_ADD = "➕ Добавить поиск";
         const string BUTTON_HELP = "❓ Помощь";
+        const string BUTTON_BACK = "⬅️ Назад";
 
         InlineKeyboardButton::Ptr menuButton(const string &text, const string &callbackData) {
             auto button = make_shared<InlineKeyboardButton>();
@@ -53,7 +54,8 @@ namespace Telegram {
             markup->keyboard = {
                 {keyboardButton(BUTTON_QUERIES)},
                 {keyboardButton(BUTTON_ADD)},
-                {keyboardButton(BUTTON_HELP)}
+                {keyboardButton(BUTTON_HELP)},
+                {keyboardButton(BUTTON_BACK)}
             };
             markup->resizeKeyboard = true;
             markup->isPersistent = true;
@@ -296,56 +298,26 @@ namespace Telegram {
         return text;
     }
 
-    void CommandsHandler::sendMenu(const Message::Ptr &message) {
-        SendMessageArgs args;
-
-        args.chatId = message->chat->id;
-        if (message->messageThreadId && message->messageThreadId.value())
-            args.messageThreadId = message->messageThreadId.value();
-
-        args.text = mainMenuText();
-        args.parseMode = "HTML";
-
-        if (isPrivateChat(message)) {
-            // /start may need to bring the bottom keyboard back.
-            args.replyMarkup = mainReplyKeyboard();
-        } else {
-            args.replyMarkup = mainMenuKeyboard();
-        }
-
-        const Message::Ptr sent = bot_.getApi().sendMessage(args);
-        if (sent) {
-            rememberScreen(
-                message->chat->id,
-                message->messageThreadId.value_or(0),
-                sent->messageId
-            );
-        }
-    }
-
     void CommandsHandler::showScreen(const Message::Ptr &message, const string &screen, bool editCurrentMessage) {
         const bool privateChat = isPrivateChat(message);
 
         string text = mainMenuText();
-        InlineKeyboardMarkup::Ptr markup;
-
         if (screen == "menu:queries") {
             text = queriesText();
-            markup = backKeyboard();
         } else if (screen == "menu:add") {
             text = addScreenText();
-            markup = backKeyboard();
         } else if (screen == "menu:help") {
             text = helpScreenText();
-            markup = backKeyboard();
-        } else if (!privateChat) {
-            markup = mainMenuKeyboard();
         }
 
-        if (privateChat && !markup) {
-            // The main menu in a private chat is driven by the bottom keyboard.
-            // Send an empty inline keyboard so the "Back" button disappears.
+        InlineKeyboardMarkup::Ptr markup;
+        if (privateChat) {
+            // Private navigation lives in the bottom keyboard, so the
+            // message itself has no inline buttons. An empty keyboard
+            // also removes the buttons left by an older screen.
             markup = make_shared<InlineKeyboardMarkup>();
+        } else {
+            markup = screen == "menu:main" ? mainMenuKeyboard() : backKeyboard();
         }
 
         const int64_t chatId = message->chat->id;
@@ -380,11 +352,28 @@ namespace Telegram {
         }
         args.text = text;
         args.parseMode = "HTML";
-        args.replyMarkup = markup;
+        if (privateChat) {
+            args.replyMarkup = mainReplyKeyboard();
+        } else {
+            args.replyMarkup = markup;
+        }
 
         const Message::Ptr sent = bot_.getApi().sendMessage(args);
         if (sent) {
             rememberScreen(chatId, threadId, sent->messageId);
+        }
+    }
+
+    void CommandsHandler::deleteTriggerMessage(const Message::Ptr &message) {
+        if (!isPrivateChat(message)) {
+            return;
+        }
+
+        try {
+            bot_.getApi().deleteMessage(message->chat->id, message->messageId);
+        } catch (const exception &exc) {
+            // Deleting the service message is a convenience, not a requirement.
+            spdlog::debug("[Telegram] deleteMessage: {}", exc.what());
         }
     }
 
@@ -431,6 +420,7 @@ namespace Telegram {
             return;
         }
 
+        deleteTriggerMessage(message);
         showScreen(message, "menu:help", false);
     }
 
@@ -442,11 +432,17 @@ namespace Telegram {
         const string text = message->text.value_or("");
 
         if (text == BUTTON_QUERIES) {
+            deleteTriggerMessage(message);
             showScreen(message, "menu:queries", false);
         } else if (text == BUTTON_ADD) {
+            deleteTriggerMessage(message);
             showScreen(message, "menu:add", false);
         } else if (text == BUTTON_HELP) {
+            deleteTriggerMessage(message);
             showScreen(message, "menu:help", false);
+        } else if (text == BUTTON_BACK) {
+            deleteTriggerMessage(message);
+            showScreen(message, "menu:main", false);
         }
     }
 
@@ -456,6 +452,7 @@ namespace Telegram {
             return;
         }
 
-        sendMenu(message);
+        deleteTriggerMessage(message);
+        showScreen(message, "menu:main", false);
     }
 }
