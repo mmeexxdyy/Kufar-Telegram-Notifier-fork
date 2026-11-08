@@ -145,7 +145,7 @@ In private chats `/start` installs a persistent bottom keyboard: **Мои пои
 
 In groups the same screens are inline buttons under the menu message: a bottom keyboard would post a message to the chat on behalf of the user.
 
-Every listing is sent as a formatted card: hashtag, title, price, date and seller, followed by an **Открыть на Kufar** button that opens the listing page.
+Every listing is sent as a formatted card: hashtag, title, price, date and seller. A listing with several photos arrives as one album whose caption contains the card and a clickable link to Kufar; single-photo and text listings carry an **Открыть на Kufar** button.
 
 ## Configuration
 
@@ -220,6 +220,7 @@ Every object in `queries` describes one search feed. All query fields are option
 | `only-with-videos` | boolean | Only listings with videos. |
 | `only-with-exchange-available` | boolean | Only listings that allow exchange. |
 | `sort-type` | integer | Price sorting: `1` = descending, `2` = ascending. |
+| `disabled` | boolean | Keep the query in the configuration but stop polling it. Searches can be paused from the bot menu. |
 | `category` | integer | Main category ID. See the category table below. |
 | `sub-category` | integer | Subcategory ID. See `include/kufar.hpp` for the full list. |
 | `computer-component-type` | integer | Computer component type (`cct`) used with subcategory `16010`. See the component type table below. |

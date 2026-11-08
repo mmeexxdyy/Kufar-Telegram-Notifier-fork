@@ -269,6 +269,11 @@ int main(int argc, char **argv) {
 
     while (true) {
         for (const auto &requestConfiguration : queryStore.getQueries()) {
+            if (!requestConfiguration.enabled) {
+                DEBUG_MSG("(Query) Skipping disabled query, topic: {}", requestConfiguration.cacheKey());
+                continue;
+            }
+
             const string cacheKey = requestConfiguration.cacheKey();
             vector<int> &viewedAds = cacheBuckets[cacheKey];
             

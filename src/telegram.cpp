@@ -51,6 +51,7 @@ namespace Telegram {
 
         /**
           Formats the listing date in the server's local time.
+          Uses "сегодня"/"вчера" for recent listings.
           Returns an empty string for missing dates.
          */
         string formatDate(time_t date) {
@@ -58,19 +59,36 @@ namespace Telegram {
                 return "";
             }
 
-            tm localTime{};
-            localtime_r(&date, &localTime);
+            tm value{};
+            localtime_r(&date, &value);
+
+            const time_t now = time(nullptr);
+            tm today{};
+            localtime_r(&now, &today);
+
+            char time[8] = {};
+            strftime(time, sizeof(time), "%H:%M", &value);
+
+            if (value.tm_year == today.tm_year && value.tm_yday == today.tm_yday) {
+                return string("сегодня, ") + time;
+            }
+            if (value.tm_year == today.tm_year && value.tm_yday + 1 == today.tm_yday) {
+                return string("вчера, ") + time;
+            }
 
             char buffer[32] = {};
-            strftime(buffer, sizeof(buffer), "%d.%m.%Y %H:%M", &localTime);
+            strftime(buffer, sizeof(buffer), "%d.%m.%Y, %H:%M", &value);
             return buffer;
         }
 
         /**
           Builds the caption of a listing. The text is parsed as HTML,
           so every value that comes from Kufar is escaped.
+
+          Albums cannot carry inline buttons, so their caption gets a
+          clickable link instead; other messages use a button.
          */
-        string formatAdvert(const Kufar::Ad &ad) {
+        string formatAdvert(const Kufar::Ad &ad, bool withLink) {
             string text;
 
             if (ad.tag.has_value() && !ad.tag->empty()) {
@@ -78,14 +96,19 @@ namespace Telegram {
             }
 
             text += "🛍 <b>" + escapeHTML(ad.title) + "</b>\n";
+            text += "────────────\n";
             text += "💰 <b>" + formatPrice(ad.price) + "</b>\n";
 
             if (const string date = formatDate(ad.date); !date.empty()) {
                 text += "🕒 " + date + "\n";
             }
 
-            text += "\n👤 " + escapeHTML(ad.sellerName);
-            text += ad.phoneNumberIsVisible ? " · телефон показан" : " · телефон скрыт";
+            text += "👤 " + escapeHTML(ad.sellerName);
+            text += ad.phoneNumberIsVisible ? " · ✅ телефон показан" : " · 🔒 телефон скрыт";
+
+            if (withLink) {
+                text += "\n\n🔗 <a href=\"" + escapeHTML(ad.link) + "\">Открыть на Kufar</a>";
+            }
 
             return text;
         }
@@ -121,27 +144,33 @@ namespace Telegram {
     }
 
     void Client::sendAdvert(const Kufar::Ad &ad, optional<int> threadID) const {
-        const string text = formatAdvert(ad);
         const int32_t threadIDValue = messageThreadID(threadID);
         const TgBot::Api &api = bot_->getApi();
         const TgBot::InlineKeyboardMarkup::Ptr keyboard = advertKeyboard(ad);
         const size_t imageCount = min(ad.images.size(), MAX_IMAGES_IN_GROUP);
 
-        // Telegram does not accept reply_markup for media groups, so an album
-        // is sent first and a separate card with the button follows it.
+        // Albums cannot carry reply_markup, so their caption includes a
+        // clickable link instead of a button.
+        const string text = formatAdvert(ad, imageCount > 1);
+
         if (imageCount > 1) {
-            TgBot::SendMediaGroupArgs albumArgs;
-            albumArgs.chatId = configuration_.chatID;
-            albumArgs.messageThreadId = threadIDValue;
-            albumArgs.media.reserve(imageCount);
+            TgBot::SendMediaGroupArgs args;
+            args.chatId = configuration_.chatID;
+            args.messageThreadId = threadIDValue;
+            args.media.reserve(imageCount);
 
             for (size_t i = 0; i < imageCount; i++) {
                 auto photo = make_shared<TgBot::InputMediaPhoto>();
                 photo->media = ad.images[i];
-                albumArgs.media.push_back(photo);
+                if (i == 0) {
+                    photo->caption = text;
+                    photo->parseMode = "HTML";
+                }
+                args.media.push_back(photo);
             }
 
-            api.sendMediaGroup(albumArgs);
+            api.sendMediaGroup(args);
+            return;
         }
 
         if (imageCount == 1) {
@@ -156,7 +185,6 @@ namespace Telegram {
             return;
         }
 
-        // Listings without photos, and cards that follow an album.
         TgBot::SendMessageArgs args;
         args.chatId = configuration_.chatID;
         args.text = text;

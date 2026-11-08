@@ -5,6 +5,9 @@
 //  Created by Am80286 on 01.11.2026
 //
 
+#include <stdexcept>
+#include <cstddef>
+
 #include <spdlog/fmt/fmt.h>
 
 #include "queries.hpp"
@@ -40,21 +43,25 @@ namespace queries {
           or an empty string when no bounds are set.
          */
         string compactPriceRange(const PriceRange &priceRange) {
-            const optional<int> &priceMin = priceRange.priceMin;
-            const optional<int> &priceMax = priceRange.priceMax;
-
-            if (priceMin.has_value() && priceMax.has_value()) {
-                return to_string(priceMin.value()) + "–" + to_string(priceMax.value()) + " BYN";
-            }
-            if (priceMin.has_value()) {
-                return "от " + to_string(priceMin.value()) + " BYN";
-            }
-            if (priceMax.has_value()) {
-                return "до " + to_string(priceMax.value()) + " BYN";
-            }
-
-            return "";
+            return formatPriceRange(priceRange);
         }
+    }
+
+    string formatPriceRange(const PriceRange &priceRange) {
+        const optional<int> &priceMin = priceRange.priceMin;
+        const optional<int> &priceMax = priceRange.priceMax;
+
+        if (priceMin.has_value() && priceMax.has_value()) {
+            return to_string(priceMin.value()) + "–" + to_string(priceMax.value()) + " BYN";
+        }
+        if (priceMin.has_value()) {
+            return "от " + to_string(priceMin.value()) + " BYN";
+        }
+        if (priceMax.has_value()) {
+            return "до " + to_string(priceMax.value()) + " BYN";
+        }
+
+        return "";
     }
 
     string QueryConfiguration::cacheKey() const {
@@ -180,6 +187,7 @@ namespace queries {
         QueryConfiguration queryConfiguration;
         queryConfiguration.kufar = kufarConfiguration;
         queryConfiguration.messageThreadID = getOptionalValue<int>(query, "message-thread-id");
+        queryConfiguration.enabled = !getOptionalValue<bool>(query, "disabled").value_or(false);
 
         if (queryConfiguration.messageThreadID.has_value() && queryConfiguration.messageThreadID.value() <= 0) {
             throw runtime_error(
@@ -226,6 +234,42 @@ namespace queries {
     json QueryStore::getRawQueries() const {
         lock_guard<mutex> lock(mtx_);
         return json_.at("queries");
+    }
+
+    json QueryStore::getRawQuery(size_t index) const {
+        lock_guard<mutex> lock(mtx_);
+        const json &queries = json_.at("queries");
+        if (index >= queries.size()) {
+            throw out_of_range("Запрос с таким номером не найден.");
+        }
+        return queries.at(index);
+    }
+
+    void QueryStore::update(size_t index, const json &query) {
+        parseQuery(query);
+
+        lock_guard<mutex> lock(mtx_);
+        json updated = json_;
+        if (index >= updated.at("queries").size()) {
+            throw out_of_range("Запрос с таким номером не найден.");
+        }
+
+        updated["queries"][index] = query;
+        saveFile(path_, updated.dump(4));
+        json_ = std::move(updated);
+    }
+
+    void QueryStore::remove(size_t index) {
+        lock_guard<mutex> lock(mtx_);
+        json updated = json_;
+        auto &queries = updated.at("queries");
+        if (index >= queries.size()) {
+            throw out_of_range("Запрос с таким номером не найден.");
+        }
+
+        queries.erase(queries.begin() + static_cast<ptrdiff_t>(index));
+        saveFile(path_, updated.dump(4));
+        json_ = std::move(updated);
     }
 
     void QueryStore::add(json &query) {
