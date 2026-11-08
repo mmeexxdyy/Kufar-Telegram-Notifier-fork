@@ -307,59 +307,96 @@ namespace Telegram {
         args.parseMode = "HTML";
 
         if (isPrivateChat(message)) {
+            // /start may need to bring the bottom keyboard back.
             args.replyMarkup = mainReplyKeyboard();
         } else {
             args.replyMarkup = mainMenuKeyboard();
         }
 
-        bot_.getApi().sendMessage(args);
-    }
-
-    void CommandsHandler::sendScreen(const Message::Ptr &message, const string &text) {
-        SendMessageArgs args;
-
-        args.chatId = message->chat->id;
-        if (message->messageThreadId && message->messageThreadId.value())
-            args.messageThreadId = message->messageThreadId.value();
-
-        args.text = text;
-        args.parseMode = "HTML";
-
-        if (isPrivateChat(message)) {
-            args.replyMarkup = mainReplyKeyboard();
+        const Message::Ptr sent = bot_.getApi().sendMessage(args);
+        if (sent) {
+            rememberScreen(
+                message->chat->id,
+                message->messageThreadId.value_or(0),
+                sent->messageId
+            );
         }
-
-        bot_.getApi().sendMessage(args);
     }
 
-    void CommandsHandler::editScreen(const Message::Ptr &message, const string &callbackData) {
-        string text = mainMenuText();
-        InlineKeyboardMarkup::Ptr markup = mainMenuKeyboard();
+    void CommandsHandler::showScreen(const Message::Ptr &message, const string &screen, bool editCurrentMessage) {
+        const bool privateChat = isPrivateChat(message);
 
-        if (callbackData == "menu:queries") {
+        string text = mainMenuText();
+        InlineKeyboardMarkup::Ptr markup;
+
+        if (screen == "menu:queries") {
             text = queriesText();
             markup = backKeyboard();
-        } else if (callbackData == "menu:add") {
+        } else if (screen == "menu:add") {
             text = addScreenText();
             markup = backKeyboard();
-        } else if (callbackData == "menu:help") {
+        } else if (screen == "menu:help") {
             text = helpScreenText();
             markup = backKeyboard();
+        } else if (!privateChat) {
+            markup = mainMenuKeyboard();
         }
 
-        EditMessageTextArgs args;
-        args.chatId = message->chat->id;
-        args.messageId = message->messageId;
+        if (privateChat && !markup) {
+            // The main menu in a private chat is driven by the bottom keyboard.
+            // Send an empty inline keyboard so the "Back" button disappears.
+            markup = make_shared<InlineKeyboardMarkup>();
+        }
+
+        const int64_t chatId = message->chat->id;
+        const int32_t threadId = message->messageThreadId.value_or(0);
+
+        const int32_t messageId = editCurrentMessage
+            ? message->messageId
+            : findScreen(chatId, threadId);
+
+        if (messageId != 0) {
+            EditMessageTextArgs args;
+            args.chatId = chatId;
+            args.messageId = messageId;
+            args.text = text;
+            args.parseMode = "HTML";
+            args.replyMarkup = markup;
+
+            try {
+                bot_.getApi().editMessageText(args);
+                rememberScreen(chatId, threadId, messageId);
+                return;
+            } catch (const exception &exc) {
+                // Telegram also rejects edits that do not change the message.
+                spdlog::debug("[Telegram] editMessageText: {}", exc.what());
+            }
+        }
+
+        SendMessageArgs args;
+        args.chatId = chatId;
+        if (threadId != 0) {
+            args.messageThreadId = threadId;
+        }
         args.text = text;
         args.parseMode = "HTML";
         args.replyMarkup = markup;
 
-        try {
-            bot_.getApi().editMessageText(args);
-        } catch (const exception &exc) {
-            // Telegram also rejects edits that do not change the message.
-            spdlog::debug("[Telegram] editMessageText: {}", exc.what());
+        const Message::Ptr sent = bot_.getApi().sendMessage(args);
+        if (sent) {
+            rememberScreen(chatId, threadId, sent->messageId);
         }
+    }
+
+    void CommandsHandler::rememberScreen(int64_t chatId, int32_t threadId, int32_t messageId) {
+        lock_guard<mutex> lock(screensMutex_);
+        screens_[to_string(chatId) + ":" + to_string(threadId)] = messageId;
+    }
+
+    int32_t CommandsHandler::findScreen(int64_t chatId, int32_t threadId) const {
+        lock_guard<mutex> lock(screensMutex_);
+        const auto screen = screens_.find(to_string(chatId) + ":" + to_string(threadId));
+        return screen == screens_.end() ? 0 : screen->second;
     }
 
     void CommandsHandler::handleCallback(CallbackQuery::Ptr query) {
@@ -385,7 +422,7 @@ namespace Telegram {
             return;
         }
 
-        editScreen(*message, query->data.value());
+        showScreen(*message, query->data.value(), true);
     }
 
     void CommandsHandler::handleHelp(Message::Ptr message) {
@@ -394,7 +431,7 @@ namespace Telegram {
             return;
         }
 
-        sendScreen(message, helpScreenText());
+        showScreen(message, "menu:help", false);
     }
 
     void CommandsHandler::handleMenuText(Message::Ptr message) {
@@ -405,11 +442,11 @@ namespace Telegram {
         const string text = message->text.value_or("");
 
         if (text == BUTTON_QUERIES) {
-            sendScreen(message, queriesText());
+            showScreen(message, "menu:queries", false);
         } else if (text == BUTTON_ADD) {
-            sendScreen(message, addScreenText());
+            showScreen(message, "menu:add", false);
         } else if (text == BUTTON_HELP) {
-            sendScreen(message, helpScreenText());
+            showScreen(message, "menu:help", false);
         }
     }
 

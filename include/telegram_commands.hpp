@@ -8,6 +8,11 @@
 #ifndef telegram_commands_hpp
 #define telegram_commands_hpp 
 
+#include <cstdint>
+#include <map>
+#include <mutex>
+#include <string>
+
 #include <spdlog/details/registry.h>
 #include <tgbot/tgbot.h>
 #include <spdlog/fmt/fmt.h>
@@ -38,8 +43,10 @@ namespace Telegram {
         void replyImpl(const TgBot::Message::Ptr &message, const std::string &text);
 
         void sendMenu(const TgBot::Message::Ptr &message);
-        void sendScreen(const TgBot::Message::Ptr &message, const std::string &text);
-        void editScreen(const TgBot::Message::Ptr &message, const std::string &callbackData);
+        void showScreen(const TgBot::Message::Ptr &message, const std::string &screen, bool editCurrentMessage);
+
+        void rememberScreen(std::int64_t chatId, std::int32_t threadId, std::int32_t messageId);
+        std::int32_t findScreen(std::int64_t chatId, std::int32_t threadId) const;
 
         void setBotCommands();
 
@@ -55,6 +62,11 @@ namespace Telegram {
         TgBot::Bot &bot_;
         queries::QueryStore &queryStore_;
         const Telegram::TelegramConfiguration &config_;
+
+        // Message that currently shows the menu screens, per chat and topic.
+        // Bottom-keyboard presses edit that message instead of posting new ones.
+        mutable std::mutex screensMutex_;
+        std::map<std::string, std::int32_t> screens_;
 
         boost::asio::thread_pool thread_pool_{4};
     };
