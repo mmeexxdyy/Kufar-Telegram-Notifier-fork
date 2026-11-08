@@ -141,7 +141,7 @@ The bot uses long polling (`getUpdates`), so it can receive commands without a p
 
 ### Chat interface
 
-In private chats `/start` installs a persistent bottom keyboard with **Мои поиски**, **Добавить поиск**, **Помощь** and **Назад**. One message of the bot is reused for all screens, and the service messages you send by pressing those buttons are deleted. The bot also publishes its commands, so Telegram shows the **Menu** button with `/start`, `/help` and `/add`.
+In private chats `/start` installs a persistent bottom keyboard: **Мои поиски**, **Добавить поиск** and **Помощь** on the main screen, and only **Назад** inside a screen. The bot keeps a single menu message: when you switch screens it sends the new one and deletes the previous one, so the chat does not fill up. The service messages you send by pressing keyboard buttons are deleted too. The bot also publishes its commands, so Telegram shows the **Menu** button with `/start`, `/help` and `/add`.
 
 In groups the same screens are inline buttons under the menu message: a bottom keyboard would post a message to the chat on behalf of the user.
 

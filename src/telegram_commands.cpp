@@ -54,7 +54,17 @@ namespace Telegram {
             markup->keyboard = {
                 {keyboardButton(BUTTON_QUERIES)},
                 {keyboardButton(BUTTON_ADD)},
-                {keyboardButton(BUTTON_HELP)},
+                {keyboardButton(BUTTON_HELP)}
+            };
+            markup->resizeKeyboard = true;
+            markup->isPersistent = true;
+            return markup;
+        }
+
+        // Sub-screens only need a way back.
+        ReplyKeyboardMarkup::Ptr backReplyKeyboard() {
+            auto markup = make_shared<ReplyKeyboardMarkup>();
+            markup->keyboard = {
                 {keyboardButton(BUTTON_BACK)}
             };
             markup->resizeKeyboard = true;
@@ -310,37 +320,67 @@ namespace Telegram {
             text = helpScreenText();
         }
 
-        InlineKeyboardMarkup::Ptr markup;
-        if (privateChat) {
-            // Private navigation lives in the bottom keyboard, so the
-            // message itself has no inline buttons. An empty keyboard
-            // also removes the buttons left by an older screen.
-            markup = make_shared<InlineKeyboardMarkup>();
-        } else {
-            markup = screen == "menu:main" ? mainMenuKeyboard() : backKeyboard();
-        }
-
         const int64_t chatId = message->chat->id;
         const int32_t threadId = message->messageThreadId.value_or(0);
 
-        const int32_t messageId = editCurrentMessage
+        const int32_t previousId = editCurrentMessage
             ? message->messageId
             : findScreen(chatId, threadId);
 
-        if (messageId != 0) {
+        // Telegram does not allow editing a message that set a reply
+        // keyboard. In private chats every screen therefore replaces the
+        // previous message: send the new one, then delete the old one.
+        if (privateChat) {
+            SendMessageArgs args;
+            args.chatId = chatId;
+            if (threadId != 0) {
+                args.messageThreadId = threadId;
+            }
+            args.text = text;
+            args.parseMode = "HTML";
+            args.replyMarkup = screen == "menu:main"
+                ? mainReplyKeyboard()
+                : backReplyKeyboard();
+
+            const Message::Ptr sent = bot_.getApi().sendMessage(args);
+            if (!sent) {
+                return;
+            }
+
+            rememberScreen(chatId, threadId, sent->messageId);
+
+            if (previousId != 0 && previousId != sent->messageId) {
+                try {
+                    bot_.getApi().deleteMessage(chatId, previousId);
+                } catch (const exception &exc) {
+                    spdlog::debug("[Telegram] deleteMessage: {}", exc.what());
+                }
+            }
+            return;
+        }
+
+        InlineKeyboardMarkup::Ptr markup = screen == "menu:main"
+            ? mainMenuKeyboard()
+            : backKeyboard();
+
+        if (previousId != 0) {
             EditMessageTextArgs args;
             args.chatId = chatId;
-            args.messageId = messageId;
+            args.messageId = previousId;
             args.text = text;
             args.parseMode = "HTML";
             args.replyMarkup = markup;
 
             try {
                 bot_.getApi().editMessageText(args);
-                rememberScreen(chatId, threadId, messageId);
+                rememberScreen(chatId, threadId, previousId);
                 return;
             } catch (const exception &exc) {
-                // Telegram also rejects edits that do not change the message.
+                // "message is not modified" means the screen is already shown.
+                if (string(exc.what()).find("message is not modified") != string::npos) {
+                    rememberScreen(chatId, threadId, previousId);
+                    return;
+                }
                 spdlog::debug("[Telegram] editMessageText: {}", exc.what());
             }
         }
@@ -352,11 +392,7 @@ namespace Telegram {
         }
         args.text = text;
         args.parseMode = "HTML";
-        if (privateChat) {
-            args.replyMarkup = mainReplyKeyboard();
-        } else {
-            args.replyMarkup = markup;
-        }
+        args.replyMarkup = markup;
 
         const Message::Ptr sent = bot_.getApi().sendMessage(args);
         if (sent) {
