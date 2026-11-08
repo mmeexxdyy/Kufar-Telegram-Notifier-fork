@@ -135,16 +135,15 @@ The bot uses long polling (`getUpdates`), so it can receive commands without a p
 
 | Command | Description |
 | --- | --- |
-| `/start` | Open the bot menu with inline buttons. |
+| `/start` | Open the bot menu. |
+| `/help` | Show the command reference. |
 | `/add <url>` | Add a search from a Kufar search-results URL. The feed is posted to the topic where the command was sent. |
 
 ### Chat interface
 
-`/start` opens a menu with inline buttons:
+In private chats `/start` installs a persistent bottom keyboard with **Мои поиски**, **Добавить поиск** and **Помощь**. The bot also publishes its commands, so Telegram shows the **Menu** button with `/start`, `/help` and `/add`.
 
-- **Мои поиски** — the configured feeds with their price range, region and topic.
-- **Добавить поиск** — how to add a feed with `/add`.
-- **Помощь** — command reference.
+In groups the same screens are inline buttons under the menu message: a bottom keyboard would post a message to the chat on behalf of the user.
 
 Every listing is sent as a formatted card: hashtag, title, price, date and seller, followed by an **Открыть на Kufar** button that opens the listing page.
 

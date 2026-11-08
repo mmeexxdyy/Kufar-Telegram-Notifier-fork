@@ -28,11 +28,40 @@ namespace Telegram {
     using namespace Kufar;
 
     namespace {
+        const string BUTTON_QUERIES = "🔎 Мои поиски";
+        const string BUTTON_ADD = "➕ Добавить поиск";
+        const string BUTTON_HELP = "❓ Помощь";
+
         InlineKeyboardButton::Ptr menuButton(const string &text, const string &callbackData) {
             auto button = make_shared<InlineKeyboardButton>();
             button->text = text;
             button->callbackData = callbackData;
             return button;
+        }
+
+        KeyboardButton::Ptr keyboardButton(const string &text) {
+            auto button = make_shared<KeyboardButton>();
+            button->text = text;
+            return button;
+        }
+
+        // Persistent bottom keyboard for private chats. Groups get the
+        // inline menu instead: a reply keyboard there posts a message
+        // to the chat on behalf of the user.
+        ReplyKeyboardMarkup::Ptr mainReplyKeyboard() {
+            auto markup = make_shared<ReplyKeyboardMarkup>();
+            markup->keyboard = {
+                {keyboardButton(BUTTON_QUERIES)},
+                {keyboardButton(BUTTON_ADD)},
+                {keyboardButton(BUTTON_HELP)}
+            };
+            markup->resizeKeyboard = true;
+            markup->isPersistent = true;
+            return markup;
+        }
+
+        bool isPrivateChat(const Message::Ptr &message) {
+            return message->chat->type == Chat::Type::Private;
         }
 
         InlineKeyboardMarkup::Ptr menuMarkup(
@@ -73,6 +102,7 @@ namespace Telegram {
             return
                 "❓ <b>Помощь</b>\n\n"
                 "/start — открыть меню\n"
+                "/help — показать эту справку\n"
                 "/add <code>&lt;ссылка&gt;</code> — добавить поиск с Kufar\n\n"
                 "<i>Под каждым объявлением есть кнопка «Открыть на Kufar».</i>";
         }
@@ -93,9 +123,43 @@ namespace Telegram {
             handleAdd(message);
         });
 
+        bot_.getEvents().onCommand("help", [this](Message::Ptr message) {
+            handleHelp(message);
+        });
+
+        // Bottom-keyboard buttons and any plain text arrive here.
+        bot_.getEvents().onNonCommandMessage([this](Message::Ptr message) {
+            handleMenuText(message);
+        });
+
         bot_.getEvents().onCallbackQuery([this](CallbackQuery::Ptr query) {
             handleCallback(std::move(query));
         });
+
+        setBotCommands();
+    }
+
+    void CommandsHandler::setBotCommands() {
+        try {
+            auto start = make_shared<BotCommand>();
+            start->command = "start";
+            start->description = "Главное меню";
+
+            auto add = make_shared<BotCommand>();
+            add->command = "add";
+            add->description = "Добавить поиск по ссылке";
+
+            auto help = make_shared<BotCommand>();
+            help->command = "help";
+            help->description = "Помощь";
+
+            if (bot_.getApi().setMyCommands({start, add, help})) {
+                spdlog::info("[Telegram] Список команд обновлён.");
+            }
+        } catch (const exception &exc) {
+            // Command registration is cosmetic: the bot still works without it.
+            spdlog::warn("[Telegram] Не удалось обновить список команд: {}", exc.what());
+        }
     }
     
     vector<string> CommandsHandler::parseArgs(Message::Ptr message) {
@@ -241,7 +305,29 @@ namespace Telegram {
 
         args.text = mainMenuText();
         args.parseMode = "HTML";
-        args.replyMarkup = mainMenuKeyboard();
+
+        if (isPrivateChat(message)) {
+            args.replyMarkup = mainReplyKeyboard();
+        } else {
+            args.replyMarkup = mainMenuKeyboard();
+        }
+
+        bot_.getApi().sendMessage(args);
+    }
+
+    void CommandsHandler::sendScreen(const Message::Ptr &message, const string &text) {
+        SendMessageArgs args;
+
+        args.chatId = message->chat->id;
+        if (message->messageThreadId && message->messageThreadId.value())
+            args.messageThreadId = message->messageThreadId.value();
+
+        args.text = text;
+        args.parseMode = "HTML";
+
+        if (isPrivateChat(message)) {
+            args.replyMarkup = mainReplyKeyboard();
+        }
 
         bot_.getApi().sendMessage(args);
     }
@@ -300,6 +386,31 @@ namespace Telegram {
         }
 
         editScreen(*message, query->data.value());
+    }
+
+    void CommandsHandler::handleHelp(Message::Ptr message) {
+        if (message->chat->id != config_.chatID) {
+            reply(message, "Это приватный бот");
+            return;
+        }
+
+        sendScreen(message, helpScreenText());
+    }
+
+    void CommandsHandler::handleMenuText(Message::Ptr message) {
+        if (message->chat->id != config_.chatID) {
+            return;
+        }
+
+        const string text = message->text.value_or("");
+
+        if (text == BUTTON_QUERIES) {
+            sendScreen(message, queriesText());
+        } else if (text == BUTTON_ADD) {
+            sendScreen(message, addScreenText());
+        } else if (text == BUTTON_HELP) {
+            sendScreen(message, helpScreenText());
+        }
     }
 
     void CommandsHandler::handleStart(Message::Ptr message) {
