@@ -40,7 +40,10 @@ namespace Kufar {
         const unordered_set<string> IGNORED_PARAMETERS = {
             "cursor",
             "elementType",
-            "etext"
+            "etext",
+            // UI-only parameters: they do not change the search results.
+            "b2c",
+            "r_pageType"
         };
 
         string getURLPart(CURLU *url, CURLUPart part, const string &name) {
