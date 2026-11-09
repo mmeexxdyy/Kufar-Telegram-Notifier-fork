@@ -290,7 +290,14 @@ int main(int argc, char **argv) {
                         );
 
                         try {
-                            telegramClient.sendAdvert(advert, requestConfiguration.messageThreadID);
+                            Ad detailedAd = advert;
+                            try {
+                                enrichAdFromPage(detailedAd);
+                            } catch (const exception &exc) {
+                                // The card is still useful without the page data.
+                                spdlog::warn("(enrichAd) [ID: {}]: {}", advert.id, exc.what());
+                            }
+                            telegramClient.sendAdvert(detailedAd, requestConfiguration.messageThreadID);
                             // Only ads that were actually sent are added to the cache.
                             viewedAds.push_back(advert.id);
                             saveFile(programConfiguration.files.cache.path, cacheBucketsToJSON(cacheBuckets).dump());

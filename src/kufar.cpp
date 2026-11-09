@@ -6,6 +6,7 @@
 //
 
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include "kufar.hpp"
 #include "networking.hpp"
 #include "helperfunctions.hpp"
@@ -143,6 +144,22 @@ namespace Kufar {
                     break;
                 }
             }
+
+            if (configuration.region.has_value()) {
+                advert.region = EnumString::region(configuration.region.value());
+            }
+
+            if (ad.contains("ad_parameters")) {
+                for (const auto &parameter : ad.at("ad_parameters")) {
+                    if (!parameter.contains("p") || !parameter.contains("vl")) {
+                        continue;
+                    }
+                    if (parameter.at("p") == "area" && parameter.at("vl").is_string()) {
+                        advert.area = parameter.at("vl").get<string>();
+                        break;
+                    }
+                }
+            }
             
             json imagesArray = ad.at("images");
             for (const auto &image : imagesArray) {
@@ -153,6 +170,66 @@ namespace Kufar {
         }
         
         return adverts;
+    }
+
+    namespace {
+        json parsePageNextData(const string &html) {
+            const string marker = "__NEXT_DATA__";
+            const size_t markerPosition = html.find(marker);
+            if (markerPosition == string::npos) {
+                throw runtime_error("Страница Kufar не содержит __NEXT_DATA__.");
+            }
+
+            const size_t openingEnd = html.find('>', markerPosition);
+            const size_t scriptEnd = html.find("</script>", openingEnd);
+            if (openingEnd == string::npos || scriptEnd == string::npos) {
+                throw runtime_error("Страница Kufar содержит повреждённый __NEXT_DATA__.");
+            }
+
+            return json::parse(html.substr(openingEnd + 1, scriptEnd - openingEnd - 1));
+        }
+
+        void readNonEmptyString(const json &object, const char *key, string &target) {
+            if (!object.contains(key) || !object.at(key).is_string()) {
+                return;
+            }
+
+            const string value = object.at(key).get<string>();
+            if (!value.empty()) {
+                target = value;
+            }
+        }
+    }
+
+    void enrichAdFromPage(Ad &ad) {
+        const string html = getTextFromURL(ad.link, 4 * 1024 * 1024);
+        const json document = parsePageNextData(html);
+
+        if (!document.contains("props") || !document.at("props").contains("initialState")) {
+            throw runtime_error("Страница Kufar не содержит данных объявления.");
+        }
+
+        const json &state = document.at("props").at("initialState");
+
+        if (state.contains("adView") && state.at("adView").contains("data")
+            && state.at("adView").at("data").is_object()) {
+            const json &data = state.at("adView").at("data");
+            readNonEmptyString(data, "body", ad.description);
+            if (ad.description.empty()) {
+                readNonEmptyString(data, "description", ad.description);
+            }
+            if (ad.area.empty()) {
+                readNonEmptyString(data, "address", ad.area);
+            }
+        }
+
+        if (state.contains("sellerBlock") && state.at("sellerBlock").contains("data")
+            && state.at("sellerBlock").at("data").is_object()) {
+            const json &seller = state.at("sellerBlock").at("data");
+            readNonEmptyString(seller, "name", ad.sellerName);
+            readNonEmptyString(seller, "accountId", ad.sellerID);
+            readNonEmptyString(seller, "customerLink", ad.sellerProfileLink);
+        }
     }
 
     namespace EnumString {
