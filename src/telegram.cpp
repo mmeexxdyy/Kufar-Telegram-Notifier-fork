@@ -59,12 +59,10 @@ namespace Telegram {
                 return "";
             }
 
-            tm value{};
-            localtime_r(&date, &value);
+            tm value = localTime(date);
 
             const time_t now = time(nullptr);
-            tm today{};
-            localtime_r(&now, &today);
+            tm today = localTime(now);
 
             char time[8] = {};
             strftime(time, sizeof(time), "%H:%M", &value);

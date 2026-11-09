@@ -6,7 +6,6 @@
 //
 
 #include <iostream>
-#include <unistd.h>
 #include <signal.h>
 #include <fstream>
 #include <map>
@@ -308,16 +307,16 @@ int main(int argc, char **argv) {
                     } else {
                         //spdlog::debug("[Already was!]");
                     }
-                    usleep(300000); // 0.3s
+                    sleepMilliseconds(300);
                 }
             } catch (const exception &exc) {
                 spdlog::error("(getAds): {}", exc.what());
             }
             DEBUG_MSG("(QueryDelay) Sleeping for: {}s.", programConfiguration.queryDelaySeconds);
-            sleep(programConfiguration.queryDelaySeconds);
+            sleepSeconds(programConfiguration.queryDelaySeconds);
         }
         DEBUG_MSG("(LoopDelay) Sleeping for: {}s.", programConfiguration.loopDelaySeconds);
-        sleep(programConfiguration.loopDelaySeconds);
+        sleepSeconds(programConfiguration.loopDelaySeconds);
     }
     return 0;
 }

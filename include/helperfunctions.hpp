@@ -29,6 +29,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <ctime>
 
 #include <spdlog/spdlog.h>
 
@@ -143,5 +144,17 @@ std::string maskToken(const std::string &token);
   treats as markup (&, < and >).
  */
 std::string escapeHTML(const std::string &text);
+
+/**
+  Portable local time conversion: localtime_r on POSIX,
+  localtime_s on Windows.
+ */
+std::tm localTime(const std::time_t &value);
+
+/**
+  Portable sleep helpers (usleep/Sleep).
+ */
+void sleepSeconds(unsigned int seconds);
+void sleepMilliseconds(unsigned int milliseconds);
 
 #endif /* helperfunctions_hpp */

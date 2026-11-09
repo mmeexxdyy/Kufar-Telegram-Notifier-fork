@@ -91,6 +91,32 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --pre
 cmake --build build --parallel
 ```
 
+## Building on Windows
+
+Install Visual Studio 2022 with the "Desktop development with C++" workload and CMake 3.30 or newer.
+
+The dependencies are easiest to get with [vcpkg](https://github.com/microsoft/vcpkg):
+
+```powershell
+git clone https://github.com/microsoft/vcpkg C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+C:\vcpkg\vcpkg install curl spdlog nlohmann-json boost-asio
+```
+
+Then clone and build:
+
+```powershell
+git clone https://github.com/Am80286/Kufar-Telegram-Notifier-fork.git
+cd Kufar-Telegram-Notifier-fork
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+The executable is written to `build\bin\Release\Kufar-Telegram-Notifier.exe`.
+
+To keep the bot running after signing out, use a process manager such as [NSSM](https://nssm.cc/) or a Task Scheduler task that starts the executable at logon.
+
 ## Running
 
 The build produces a single executable and does not install anything system-wide. Run it from a directory the user can write to, because the cache and log files are created in the current working directory by default.

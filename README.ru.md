@@ -91,6 +91,32 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --pre
 cmake --build build --parallel
 ```
 
+## Сборка на Windows
+
+Установите Visual Studio 2022 с компонентом «Разработка классических приложений на C++» и CMake 3.30 или новее.
+
+Зависимости проще всего поставить через [vcpkg](https://github.com/microsoft/vcpkg):
+
+```powershell
+git clone https://github.com/microsoft/vcpkg C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+C:\vcpkg\vcpkg install curl spdlog nlohmann-json boost-asio
+```
+
+Затем склонируйте и соберите проект:
+
+```powershell
+git clone https://github.com/Am80286/Kufar-Telegram-Notifier-fork.git
+cd Kufar-Telegram-Notifier-fork
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+Исполняемый файл появится в `build\bin\Release\Kufar-Telegram-Notifier.exe`.
+
+Чтобы бот работал после выхода из системы, используйте менеджер процессов вроде [NSSM](https://nssm.cc/) или задачу в Планировщике заданий, которая запускает exe при входе.
+
 ## Запуск
 
 Сборка даёт один исполняемый файл и ничего не устанавливает в систему. Запускайте его из каталога, в который у пользователя есть право записи: по умолчанию файлы кеша и лога создаются в текущем рабочем каталоге.
