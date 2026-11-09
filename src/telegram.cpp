@@ -146,8 +146,6 @@ namespace Telegram {
                 text += "👤 " + sellerName;
             }
 
-            text += ad.phoneNumberIsVisible ? " · ✅ телефон показан" : " · 🔒 телефон скрыт";
-
             if (!ad.sellerID.empty()) {
                 text += "\n🆔 <code>" + escapeHTML(ad.sellerID) + "</code>";
             }

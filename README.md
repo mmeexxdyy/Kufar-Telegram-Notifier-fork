@@ -145,7 +145,7 @@ In private chats `/start` installs a persistent bottom keyboard: **Мои пои
 
 In groups the same screens are inline buttons under the menu message: a bottom keyboard would post a message to the chat on behalf of the user.
 
-Every listing is sent as a formatted card: hashtag, title, price, location, date, description, seller with a profile link, and the seller ID. Public Kufar data has no phone number, only a "shown/hidden" flag, so the card states the status and links to the listing where the number can be revealed.
+Every listing is sent as a formatted card: hashtag, title, price, location, date, description, seller with a profile link, and the seller ID.
 
 A listing with several photos arrives as one album whose caption contains the card and a clickable link to Kufar; single-photo and text listings carry buttons for the listing and the seller profile.
 
