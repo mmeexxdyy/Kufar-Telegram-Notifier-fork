@@ -118,11 +118,21 @@ namespace queries {
         );
     }
 
+    string formatTag(const string &tag) {
+        if (tag.empty()) {
+            return tag;
+        }
+        if (tag.find_first_of(" \t\n") == string::npos) {
+            return "#" + tag;
+        }
+        return tag;
+    }
+
     string QueryConfiguration::shortDescription() const {
         vector<string> parts;
 
         if (kufar.tag.has_value() && !kufar.tag->empty()) {
-            parts.push_back("#" + kufar.tag.value());
+            parts.push_back(formatTag(kufar.tag.value()));
         } else {
             parts.push_back("без ключевого слова");
         }

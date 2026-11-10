@@ -39,6 +39,7 @@ namespace Telegram {
         const string BUTTON_BACK = "⬅️ Назад";
 
         const string BUTTON_PRICE = "💰 Изменить цену";
+        const string BUTTON_TITLE = "🏷 Изменить название";
         const string BUTTON_HIDE = "⏸ Скрыть";
         const string BUTTON_SHOW = "▶️ Включить";
         const string BUTTON_DELETE = "🗑 Удалить";
@@ -244,9 +245,9 @@ namespace Telegram {
 
         string queryButtonLabel(const QueryConfiguration &query) {
             if (query.kufar.tag.has_value() && !query.kufar.tag->empty()) {
-                return "#" + query.kufar.tag.value();
+                return formatTag(query.kufar.tag.value());
             }
-            return "без ключевого слова";
+            return "без названия";
         }
 
         string queryDetailText(size_t index, const QueryConfiguration &query) {
@@ -285,8 +286,10 @@ namespace Telegram {
                 "2. Скопируйте ссылку из адресной строки.\n"
                 "3. Отправьте её командой:\n\n"
                 "<code>/add https://www.kufar.by/l/...</code>\n\n"
-                "<blockquote>Объявления будут приходить в ту тему, "
-                "из которой добавлен поиск.</blockquote>";
+                "Название можно задать сразу — оно будет в карточках и в списке поисков:\n\n"
+                "<code>/add https://... \"iPhone до 500\"</code>\n\n"
+                "<blockquote>Без названия бот возьмёт его из категории Kufar, "
+                "а поменять его можно в карточке поиска.</blockquote>";
         }
 
         string helpScreenText() {
@@ -295,10 +298,11 @@ namespace Telegram {
                 "<b>Команды</b>\n"
                 "/start — открыть меню\n"
                 "/help — эта справка\n"
-                "/add <code>ссылка</code> — добавить поиск с Kufar\n\n"
+                "/add <code>ссылка</code> — добавить поиск с Kufar\n"
+                "/add <code>ссылка</code> \"название\" — сразу с названием\n\n"
                 "<b>Управление поисками</b>\n"
-                "Откройте «🔎 Мои поиски»: в карточке поиска можно изменить цену, "
-                "скрыть его или удалить.\n\n"
+                "Откройте «🔎 Мои поиски»: в карточке поиска можно изменить название "
+                "и цену, скрыть его или удалить.\n\n"
                 "<i>У объявления есть кнопка «Открыть на Kufar», "
                 "а у альбома — ссылка в подписи.</i>";
         }
@@ -560,7 +564,7 @@ namespace Telegram {
         setState(
             message->chat->id,
             message->messageThreadId.value_or(0),
-            ChatState{mainMenu ? "main" : screen, 0, false}
+            ChatState{mainMenu ? "main" : screen, 0}
         );
 
         renderScreen(
@@ -592,7 +596,7 @@ namespace Telegram {
         setState(
             message->chat->id,
             message->messageThreadId.value_or(0),
-            ChatState{"list", 0, false}
+            ChatState{"list", 0}
         );
 
         renderScreen(
@@ -615,6 +619,7 @@ namespace Telegram {
 
         InlineKeyboardMarkup::Ptr inlineMarkup = menuMarkup({
             {menuButton(BUTTON_PRICE, "qprice:" + to_string(index))},
+            {menuButton(BUTTON_TITLE, "qtitle:" + to_string(index))},
             {menuButton(query.enabled ? BUTTON_HIDE : BUTTON_SHOW, "qtoggle:" + to_string(index))},
             {menuButton(BUTTON_DELETE, "qdel:" + to_string(index))},
             {menuButton(BUTTON_BACK, "qlist")}
@@ -622,6 +627,7 @@ namespace Telegram {
 
         ReplyKeyboardMarkup::Ptr replyKeyboard = replyMarkup({
             {keyboardButton(BUTTON_PRICE)},
+            {keyboardButton(BUTTON_TITLE)},
             {keyboardButton(query.enabled ? BUTTON_HIDE : BUTTON_SHOW)},
             {keyboardButton(BUTTON_DELETE)},
             {keyboardButton(BUTTON_BACK)}
@@ -630,7 +636,7 @@ namespace Telegram {
         setState(
             message->chat->id,
             message->messageThreadId.value_or(0),
-            ChatState{"detail", index, false}
+            ChatState{"detail", index}
         );
 
         renderScreen(message, queryDetailText(index, query), inlineMarkup, replyKeyboard, editCurrentMessage);
@@ -673,7 +679,50 @@ namespace Telegram {
         setState(
             message->chat->id,
             message->messageThreadId.value_or(0),
-            ChatState{"price", index, true}
+            ChatState{"price", index, "price"}
+        );
+
+        renderScreen(message, text, inlineMarkup, replyKeyboard, editCurrentMessage);
+    }
+
+    void CommandsHandler::titlePromptScreen(const Message::Ptr &message, size_t index,
+                                            bool editCurrentMessage, const string &error) {
+        const vector<QueryConfiguration> queries = queryStore_.getQueries();
+        if (index >= queries.size()) {
+            queriesListScreen(message, editCurrentMessage);
+            return;
+        }
+
+        const optional<string> &tag = queries[index].kufar.tag;
+        const string current = (tag.has_value() && !tag->empty())
+            ? escapeHTML(formatTag(tag.value()))
+            : string("без названия");
+
+        string text = fmt::format(
+            "🏷 <b>Название поиска {}</b>\n\n"
+            "<blockquote>Сейчас: {}</blockquote>\n\n"
+            "Отправьте новое название одним сообщением.\n"
+            "<code>нет</code> — убрать название.",
+            index + 1,
+            current
+        );
+
+        if (!error.empty()) {
+            text += "\n\n❌ " + escapeHTML(error);
+        }
+
+        InlineKeyboardMarkup::Ptr inlineMarkup = menuMarkup({
+            {menuButton(BUTTON_BACK, "q:" + to_string(index))}
+        });
+
+        ReplyKeyboardMarkup::Ptr replyKeyboard = replyMarkup({
+            {keyboardButton(BUTTON_BACK)}
+        });
+
+        setState(
+            message->chat->id,
+            message->messageThreadId.value_or(0),
+            ChatState{"title", index, "title"}
         );
 
         renderScreen(message, text, inlineMarkup, replyKeyboard, editCurrentMessage);
@@ -712,7 +761,7 @@ namespace Telegram {
         setState(
             message->chat->id,
             message->messageThreadId.value_or(0),
-            ChatState{"confirm", index, false}
+            ChatState{"confirm", index}
         );
 
         renderScreen(message, text, inlineMarkup, replyKeyboard, editCurrentMessage);
@@ -780,6 +829,39 @@ namespace Telegram {
         }
     }
 
+    void CommandsHandler::applyTitle(const Message::Ptr &message, size_t index, const string &text) {
+        const string title = trim(text);
+        if (title.empty()) {
+            titlePromptScreen(message, index, false, "Название не может быть пустым.");
+            return;
+        }
+
+        string lower = title;
+        transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+            return static_cast<char>(tolower(c));
+        });
+
+        try {
+            json raw = queryStore_.getRawQuery(index);
+
+            if (lower == "нет" || lower == "убрать") {
+                raw.erase("tag");
+            } else {
+                if (title.size() > 80) {
+                    titlePromptScreen(message, index, false, "Слишком длинное название, максимум 80 символов.");
+                    return;
+                }
+                raw["tag"] = title;
+            }
+
+            queryStore_.update(index, raw);
+            queryScreen(message, index, false);
+        } catch (const exception &exc) {
+            spdlog::error("[Telegram] Ошибка изменения названия: {}", exc.what());
+            titlePromptScreen(message, index, false, exc.what());
+        }
+    }
+
     void CommandsHandler::goBack(const Message::Ptr &message) {
         const ChatState state = getState(
             message->chat->id,
@@ -790,7 +872,7 @@ namespace Telegram {
             showScreen(message, "menu:main", false);
         } else if (state.screen == "detail") {
             queriesListScreen(message, false);
-        } else if (state.screen == "price" || state.screen == "confirm") {
+        } else if (state.screen == "price" || state.screen == "title" || state.screen == "confirm") {
             queryScreen(message, state.queryIndex, false);
         } else {
             showScreen(message, "menu:main", false);
@@ -842,23 +924,53 @@ namespace Telegram {
             reply(
                 message,
                 "Укажите ссылку на поиск с Kufar:\n\n"
-                "/add https://www.kufar.by/l/..."
+                "/add https://www.kufar.by/l/...\n\n"
+                "Можно сразу задать название:\n"
+                "/add <ссылка> \"iPhone до 500\""
             );
             return;
         }
 
         string url = args[1];
+        optional<string> title;
+        if (args.size() >= 3 && !trim(args[2]).empty()) {
+            title = trim(args[2]);
+        }
 
-        boost::asio::post(thread_pool_, [this, message, url = std::move(url)] {
+        boost::asio::post(thread_pool_, [this, message, url = std::move(url), title] {
             try {
                 json newQuery = importSearchQuery(url);
+
+                if (title.has_value()) {
+                    newQuery["tag"] = title.value();
+                } else if (!newQuery.contains("tag")) {
+                    // No search text in the URL: use the subcategory or
+                    // category name as a readable title.
+                    if (newQuery.contains("sub-category") && newQuery.at("sub-category").is_number_integer()) {
+                        const string name = EnumString::subCategory(newQuery.at("sub-category").get<int>());
+                        if (!name.empty() && name.front() != '[') {
+                            newQuery["tag"] = name;
+                        }
+                    } else if (newQuery.contains("category") && newQuery.at("category").is_number_integer()) {
+                        const string name = EnumString::category(
+                            static_cast<Category>(newQuery.at("category").get<int>())
+                        );
+                        if (!name.empty() && name.front() != '[') {
+                            newQuery["tag"] = name;
+                        }
+                    }
+                }
+
                 if (message->messageThreadId)
                     newQuery["message-thread-id"] = message->messageThreadId.value();
 
                 queryStore_.add(newQuery);
+
+                const string addedTitle = newQuery.value("tag", "");
                 reply(
                     message,
-                    "✅ Поиск добавлен. Объявления будут приходить {}.",
+                    "✅ Поиск добавлен{}. Объявления будут приходить {}.",
+                    addedTitle.empty() ? "" : ": " + addedTitle,
                     message->messageThreadId ? "в эту тему" : "в основной чат"
                 );
                 spdlog::info(
@@ -912,6 +1024,10 @@ namespace Telegram {
             pricePromptScreen(*message, index.value(), true);
             return;
         }
+        if (const optional<size_t> index = parseIndex(data, "qtitle:"); index.has_value()) {
+            titlePromptScreen(*message, index.value(), true);
+            return;
+        }
         if (const optional<size_t> index = parseIndex(data, "qtoggle:"); index.has_value()) {
             toggleQuery(*message, index.value());
             return;
@@ -953,9 +1069,13 @@ namespace Telegram {
             message->messageThreadId.value_or(0)
         );
 
-        if (state.pendingPrice) {
+        if (!state.pendingField.empty()) {
             deleteTriggerMessage(message);
-            applyPrice(message, state.queryIndex, text);
+            if (state.pendingField == "title") {
+                applyTitle(message, state.queryIndex, text);
+            } else {
+                applyPrice(message, state.queryIndex, text);
+            }
             return;
         }
 
@@ -977,6 +1097,9 @@ namespace Telegram {
         } else if (state.screen == "detail" && text == BUTTON_PRICE) {
             deleteTriggerMessage(message);
             pricePromptScreen(message, state.queryIndex, false);
+        } else if (state.screen == "detail" && text == BUTTON_TITLE) {
+            deleteTriggerMessage(message);
+            titlePromptScreen(message, state.queryIndex, false);
         } else if (state.screen == "detail" && (text == BUTTON_HIDE || text == BUTTON_SHOW)) {
             deleteTriggerMessage(message);
             toggleQuery(message, state.queryIndex);

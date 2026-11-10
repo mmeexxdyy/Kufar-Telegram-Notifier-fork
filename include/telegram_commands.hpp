@@ -36,7 +36,7 @@ namespace Telegram {
         struct ChatState {
             std::string screen = "main";
             size_t queryIndex = 0;
-            bool pendingPrice = false;
+            std::string pendingField; // "price" or "title"
         };
 
         std::vector<std::string> parseArgs(const TgBot::Message::Ptr message);
@@ -59,11 +59,14 @@ namespace Telegram {
         void queryScreen(const TgBot::Message::Ptr &message, size_t index, bool editCurrentMessage);
         void pricePromptScreen(const TgBot::Message::Ptr &message, size_t index, bool editCurrentMessage,
                                const std::string &error = "");
+        void titlePromptScreen(const TgBot::Message::Ptr &message, size_t index, bool editCurrentMessage,
+                               const std::string &error = "");
         void deleteConfirmScreen(const TgBot::Message::Ptr &message, size_t index, bool editCurrentMessage);
 
         void toggleQuery(const TgBot::Message::Ptr &message, size_t index);
         void deleteQuery(const TgBot::Message::Ptr &message, size_t index);
         void applyPrice(const TgBot::Message::Ptr &message, size_t index, const std::string &text);
+        void applyTitle(const TgBot::Message::Ptr &message, size_t index, const std::string &text);
 
         void goBack(const TgBot::Message::Ptr &message);
 

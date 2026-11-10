@@ -34,6 +34,10 @@ namespace queries {
     // Returns an empty string when no bounds are set.
     std::string formatPriceRange(const Kufar::PriceRange &priceRange);
 
+    // Renders a query title as a hashtag when it is a single word,
+    // and as plain text otherwise.
+    std::string formatTag(const std::string &tag);
+
     QueryConfiguration parseQuery(const nlohmann::json &query);
     std::string describeQuery(const QueryConfiguration &query);
 

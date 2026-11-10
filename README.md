@@ -163,7 +163,7 @@ The bot uses long polling (`getUpdates`), so it can receive commands without a p
 | --- | --- |
 | `/start` | Open the bot menu. |
 | `/help` | Show the command reference. |
-| `/add <url>` | Add a search from a Kufar search-results URL. The feed is posted to the topic where the command was sent. |
+| `/add <url> [title]` | Add a search from a Kufar search-results URL. An optional title is used in listing cards and can be changed later in the menu; without it the bot takes the name from the Kufar category. The feed is posted to the topic where the command was sent. |
 
 ### Chat interface
 

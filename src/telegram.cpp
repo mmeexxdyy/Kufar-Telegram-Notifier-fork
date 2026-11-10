@@ -108,7 +108,7 @@ namespace Telegram {
             string text;
 
             if (ad.tag.has_value() && !ad.tag->empty()) {
-                text += "🏷 <b>#" + escapeHTML(ad.tag.value()) + "</b>\n\n";
+                text += "🏷 <b>" + escapeHTML(formatTag(ad.tag.value())) + "</b>\n\n";
             }
 
             text += "🛍 <b>" + escapeHTML(ad.title) + "</b>\n";
