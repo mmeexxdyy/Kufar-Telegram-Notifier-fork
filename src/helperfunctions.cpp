@@ -5,7 +5,6 @@
 //  Created by Macintosh on 04.06.2022.
 //
 
-#include <pstl/glue_algorithm_defs.h>
 #include <stdexcept>
 #include <vector>
 #include <fstream>
@@ -15,6 +14,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <spdlog/spdlog.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "helperfunctions.hpp"
 #include "kufar.hpp"
@@ -93,11 +98,66 @@ void saveFile(const string &path, const string &contents) {
     if (!ofs)
         throw runtime_error("Couldn't flush/close file during saving");
 
+#ifdef _WIN32
+    // std::rename does not overwrite an existing file on Windows.
+    std::remove(path.c_str());
+#endif
+
     if (std::rename(tmpPath.c_str(), path.c_str()))
     {
         std::remove(tmpPath.c_str());
         throw runtime_error("Couldn't rename the temporary file during saving");
     }
+}
+
+string escapeHTML(const string &text) {
+    string escaped;
+    escaped.reserve(text.size());
+
+    for (const char character : text) {
+        switch (character) {
+            case '&':
+                escaped += "&amp;";
+                break;
+            case '<':
+                escaped += "&lt;";
+                break;
+            case '>':
+                escaped += "&gt;";
+                break;
+            default:
+                escaped += character;
+                break;
+        }
+    }
+
+    return escaped;
+}
+
+tm localTime(const time_t &value) {
+    tm result{};
+#ifdef _WIN32
+    localtime_s(&result, &value);
+#else
+    localtime_r(&value, &result);
+#endif
+    return result;
+}
+
+void sleepSeconds(unsigned int seconds) {
+#ifdef _WIN32
+    Sleep(seconds * 1000);
+#else
+    sleep(seconds);
+#endif
+}
+
+void sleepMilliseconds(unsigned int milliseconds) {
+#ifdef _WIN32
+    Sleep(milliseconds);
+#else
+    usleep(milliseconds * 1000);
+#endif
 }
 
 string maskToken(const string &token) {

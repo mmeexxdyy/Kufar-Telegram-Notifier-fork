@@ -6,7 +6,9 @@
 //
 
 #include <algorithm>
+#include <cstddef>
 #include <limits>
+#include <stdexcept>
 #include <unordered_set>
 
 #include <spdlog/fmt/fmt.h>
@@ -75,6 +77,33 @@ namespace queries {
 
             return id;
         }
+    }
+
+    string formatPriceRange(const PriceRange &priceRange) {
+        const optional<int> &priceMin = priceRange.priceMin;
+        const optional<int> &priceMax = priceRange.priceMax;
+
+        if (priceMin.has_value() && priceMax.has_value()) {
+            return to_string(priceMin.value()) + "–" + to_string(priceMax.value()) + " BYN";
+        }
+        if (priceMin.has_value()) {
+            return "от " + to_string(priceMin.value()) + " BYN";
+        }
+        if (priceMax.has_value()) {
+            return "до " + to_string(priceMax.value()) + " BYN";
+        }
+
+        return "";
+    }
+
+    string formatTag(const string &tag) {
+        if (tag.empty()) {
+            return tag;
+        }
+        if (tag.find_first_of(" \t\n") == string::npos) {
+            return "#" + tag;
+        }
+        return tag;
     }
 
     string QueryConfiguration::cacheKey() const {
@@ -159,6 +188,42 @@ namespace queries {
         return out;
     }
 
+    string QueryConfiguration::shortDescription() const {
+        vector<string> parts;
+
+        if (kufar.tag.has_value() && !kufar.tag->empty()) {
+            parts.push_back(formatTag(kufar.tag.value()));
+        } else {
+            parts.push_back("без названия");
+        }
+
+        if (const string price = formatPriceRange(kufar.priceRange); !price.empty()) {
+            parts.push_back(price);
+        }
+        if (kufar.region.has_value()) {
+            parts.push_back(EnumString::region(kufar.region.value()));
+        }
+        if (kufar.category.has_value()) {
+            parts.push_back(EnumString::category(kufar.category.value()));
+        }
+
+        parts.push_back(
+            messageThreadID.has_value()
+                ? "тема " + to_string(messageThreadID.value())
+                : "основной чат"
+        );
+
+        string description;
+        for (size_t i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                description += " · ";
+            }
+            description += parts[i];
+        }
+
+        return description;
+    }
+
     QueryConfiguration parseQuery(const json &query) {
         if (!query.is_object()) {
             throw runtime_error("Запрос должен быть объектом.");
@@ -196,6 +261,7 @@ namespace queries {
         queryConfiguration.id = parseQueryID(query);
         queryConfiguration.kufar = kufarConfiguration;
         queryConfiguration.messageThreadID = getOptionalValue<int>(query, "message-thread-id");
+        queryConfiguration.enabled = !getOptionalValue<bool>(query, "disabled").value_or(false);
 
         if (queryConfiguration.messageThreadID.has_value() && queryConfiguration.messageThreadID.value() <= 0) {
             throw runtime_error(
@@ -339,5 +405,41 @@ namespace queries {
         saveFile(path_, updated.dump(4));
         json_ = std::move(updated);
         return removedQuery;
+    }
+
+    json QueryStore::getRawQuery(size_t index) const {
+        lock_guard<mutex> lock(mtx_);
+        const json &queries = json_.at("queries");
+        if (index >= queries.size()) {
+            throw out_of_range("Запрос с таким номером не найден.");
+        }
+        return queries.at(index);
+    }
+
+    void QueryStore::update(size_t index, const json &query) {
+        parseQuery(query);
+
+        lock_guard<mutex> lock(mtx_);
+        json updated = json_;
+        if (index >= updated.at("queries").size()) {
+            throw out_of_range("Запрос с таким номером не найден.");
+        }
+
+        updated["queries"][index] = query;
+        saveFile(path_, updated.dump(4));
+        json_ = std::move(updated);
+    }
+
+    void QueryStore::remove(size_t index) {
+        lock_guard<mutex> lock(mtx_);
+        json updated = json_;
+        auto &queries = updated.at("queries");
+        if (index >= queries.size()) {
+            throw out_of_range("Запрос с таким номером не найден.");
+        }
+
+        queries.erase(queries.begin() + static_cast<ptrdiff_t>(index));
+        saveFile(path_, updated.dump(4));
+        json_ = std::move(updated);
     }
 }

@@ -12,7 +12,7 @@ A small self-hosted bot that watches [Kufar](https://kufar.by) for new listings 
 2. New listings are sent to the Telegram chat. If a query has `message-thread-id`, its listings go to that topic; otherwise they go to the chat's General topic.
 3. Sent listing IDs are stored in `cached-data.json`, separately for every topic, so the same listing is not posted twice.
 4. After all queries have run, the bot waits for the configured loop delay and starts again. It runs in the foreground until stopped.
-5. In parallel, the bot receives Telegram updates through long polling. No public IP or webhook is required; it currently answers `/start`, `/add`, `/list`, and `/del`.
+5. In parallel, the bot receives Telegram updates through long polling. No public IP or webhook is required; it answers `/start`, `/help`, `/add`, `/list`, and `/del`, and serves the inline-button menu.
 
 Telegram messages produced by the bot are currently written in Russian.
 
@@ -91,6 +91,32 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --pre
 cmake --build build --parallel
 ```
 
+## Building on Windows
+
+Install Visual Studio 2022 with the "Desktop development with C++" workload and CMake 3.30 or newer.
+
+The dependencies are easiest to get with [vcpkg](https://github.com/microsoft/vcpkg):
+
+```powershell
+git clone https://github.com/microsoft/vcpkg C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+C:\vcpkg\vcpkg install curl spdlog nlohmann-json boost-asio
+```
+
+Then clone and build:
+
+```powershell
+git clone https://github.com/Am80286/Kufar-Telegram-Notifier-fork.git
+cd Kufar-Telegram-Notifier-fork
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+The executable is written to `build\bin\Release\Kufar-Telegram-Notifier.exe`.
+
+To keep the bot running after signing out, use a process manager such as [NSSM](https://nssm.cc/) or a Task Scheduler task that starts the executable at logon.
+
 ## Running
 
 The build produces a single executable and does not install anything system-wide. Run it from a directory the user can write to, because the cache and log files are created in the current working directory by default.
@@ -135,10 +161,21 @@ The bot uses long polling (`getUpdates`), so it can receive commands without a p
 
 | Command | Description |
 | --- | --- |
-| `/start` | Show a short description of the bot. |
-| `/add <URL>` | Add a new search from a Kufar search-results URL. |
+| `/start` | Open the bot menu. |
+| `/help` | Show the command reference. |
+| `/add <URL> [title]` | Add a new search from a Kufar search-results URL. The optional title is used in listing cards and can be changed later; without it the bot takes the Kufar category name. |
 | `/list` | List the searches assigned to the current topic, each with a number. |
 | `/del <N>` | Delete search number `N` from the current topic. |
+
+### Chat interface
+
+In private chats `/start` installs a persistent bottom keyboard: **Мои поиски**, **Добавить поиск** and **Помощь** on the main screen, and only **Назад** inside a screen. The bot keeps a single menu message: when you switch screens it sends the new one and deletes the previous one. The bot also publishes its commands, so Telegram shows the **Menu** button.
+
+In groups the same screens are inline buttons under the menu message: a bottom keyboard there would post messages on behalf of the user.
+
+Opening **Мои поиски** lists the searches with a button per search. A search card can change its title and price, hide or show the feed, and delete it with confirmation. A hidden search stays in the configuration with `"disabled": true` and is not polled.
+
+Every listing is sent as a formatted card: hashtag, title, price, location, date, description, seller with a profile link, and the seller ID. A listing with several photos arrives as one album whose caption contains the card and a clickable link to Kufar; single-photo and text listings carry buttons for the listing and the seller profile. The description and seller details cost one extra request per new listing; cached listings are not fetched again.
 
 #### `/add`
 
@@ -238,6 +275,7 @@ Every object in `queries` describes one search feed. All query fields are option
 | `region` | integer | Region ID. See the region table below. |
 | `areas` | array of integers | Area (district/city) IDs to filter by. See `include/kufar.hpp` for the full list. |
 | `source-url` | string | Kufar search URL the query was imported from with `/add`. Informational only. |
+| `disabled` | boolean | Keep the query in the configuration but stop polling it. Searches can be paused from the bot menu. |
 
 Boolean filters are sent to Kufar only when set to `true`. Setting them to `false` is the same as omitting them.
 

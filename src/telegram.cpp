@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <ctime>
 #include <exception>
 #include <memory>
@@ -20,6 +21,7 @@
 #include "telegram.hpp"
 #include "telegram_commands.hpp"
 #include "queries.hpp"
+#include "helperfunctions.hpp"
 
 namespace Telegram {
     using namespace std;
@@ -29,27 +31,150 @@ namespace Telegram {
         constexpr size_t MAX_IMAGES_IN_GROUP = 10;
 
         /**
-          Builds the ad text. Same format as was used
-          when sending through the HTTP API.
+          Formats the price stored in kopecks as a human-readable
+          BYN amount with thousands separators.
          */
-        string formatAdvert(const Kufar::Ad &ad) {
-            string formattedTime = ctime(&ad.date);
-            formattedTime.pop_back();
-
-            string text;
-
-            if (ad.tag.has_value()) {
-                text += "#" + ad.tag.value() + "\n";
+        string formatPrice(int priceInKopecks) {
+            if (priceInKopecks <= 0) {
+                return "цена не указана";
             }
 
-            text += "Название: " + ad.title + "\n"
-                    "Дата: " + formattedTime + "\n"
-                    "Цена: " + to_string(ad.price / 100) + " BYN\n\n"
-                    "Имя продавца: " + ad.sellerName + "\n"
-                    "Номер телефона не скрыт: " + (ad.phoneNumberIsVisible ? "Да" : "Нет") + "\n"
-                    "Ссылка: " + ad.link;
+            string digits = to_string(priceInKopecks / 100);
+            for (ptrdiff_t position = static_cast<ptrdiff_t>(digits.size()) - 3;
+                 position > 0;
+                 position -= 3) {
+                digits.insert(static_cast<size_t>(position), " ");
+            }
+
+            return digits + " BYN";
+        }
+
+        /**
+          Formats the listing date in the server's local time.
+          Uses "сегодня"/"вчера" for recent listings.
+          Returns an empty string for missing dates.
+         */
+        string formatDate(time_t date) {
+            if (date == 0) {
+                return "";
+            }
+
+            tm value = localTime(date);
+
+            const time_t now = time(nullptr);
+            tm today = localTime(now);
+
+            char time[8] = {};
+            strftime(time, sizeof(time), "%H:%M", &value);
+
+            if (value.tm_year == today.tm_year && value.tm_yday == today.tm_yday) {
+                return string("сегодня, ") + time;
+            }
+            if (value.tm_year == today.tm_year && value.tm_yday + 1 == today.tm_yday) {
+                return string("вчера, ") + time;
+            }
+
+            char buffer[32] = {};
+            strftime(buffer, sizeof(buffer), "%d.%m.%Y, %H:%M", &value);
+            return buffer;
+        }
+
+        string truncateText(const string &text, size_t limit) {
+            if (text.size() <= limit) {
+                return text;
+            }
+
+            size_t cut = text.rfind(' ', limit);
+            if (cut == string::npos || cut < limit / 2) {
+                cut = limit;
+            }
+
+            // Never split a UTF-8 sequence.
+            while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
+                cut--;
+            }
+
+            return text.substr(0, cut) + "…";
+        }
+
+        /**
+          Builds the caption of a listing. The text is parsed as HTML,
+          so every value that comes from Kufar is escaped.
+
+          Albums cannot carry inline buttons, so their caption gets a
+          clickable link instead; other messages use a button.
+         */
+        string formatAdvert(const Kufar::Ad &ad, bool withLink, size_t descriptionLimit) {
+            string text;
+
+            if (ad.tag.has_value() && !ad.tag->empty()) {
+                text += "🏷 <b>" + escapeHTML(formatTag(ad.tag.value())) + "</b>\n\n";
+            }
+
+            text += "🛍 <b>" + escapeHTML(ad.title) + "</b>\n";
+            text += "────────────\n";
+            text += "💰 <b>" + formatPrice(ad.price) + "</b>\n";
+
+            string location = ad.region;
+            if (!ad.area.empty()) {
+                location += location.empty() ? ad.area : ", " + ad.area;
+            }
+            if (!location.empty()) {
+                text += "📍 " + escapeHTML(location) + "\n";
+            }
+
+            if (const string date = formatDate(ad.date); !date.empty()) {
+                text += "🕒 " + date + "\n";
+            }
+
+            if (!ad.description.empty()) {
+                text += "────────────\n";
+                text += "📄 " + escapeHTML(truncateText(ad.description, descriptionLimit)) + "\n";
+            }
+
+            text += "────────────\n";
+
+            const string sellerName = ad.sellerName.empty()
+                ? string("продавец")
+                : escapeHTML(ad.sellerName);
+
+            if (!ad.sellerProfileLink.empty()) {
+                text += "👤 <a href=\"" + escapeHTML(ad.sellerProfileLink) + "\">" + sellerName + "</a>";
+            } else {
+                text += "👤 " + sellerName;
+            }
+
+            if (!ad.sellerID.empty()) {
+                text += "\n🆔 <code>" + escapeHTML(ad.sellerID) + "</code>";
+            }
+
+            if (withLink) {
+                text += "\n\n🔗 <a href=\"" + escapeHTML(ad.link) + "\">Открыть на Kufar</a>";
+            }
 
             return text;
+        }
+
+        /**
+          Adds the "open on Kufar" and "seller profile" buttons to a listing.
+         */
+        TgBot::InlineKeyboardMarkup::Ptr advertKeyboard(const Kufar::Ad &ad) {
+            auto openButton = make_shared<TgBot::InlineKeyboardButton>();
+            openButton->text = "🔗 Открыть на Kufar";
+            openButton->url = ad.link;
+
+            vector<vector<TgBot::InlineKeyboardButton::Ptr>> rows = {{openButton}};
+
+            if (!ad.sellerProfileLink.empty()) {
+                auto profileButton = make_shared<TgBot::InlineKeyboardButton>();
+                profileButton->text = "👤 Профиль продавца";
+                profileButton->url = ad.sellerProfileLink;
+                rows.push_back({profileButton});
+            }
+
+            auto markup = make_shared<TgBot::InlineKeyboardMarkup>();
+            markup->inlineKeyboard = rows;
+            return markup;
         }
 
         int32_t messageThreadID(const optional<int> &threadID) {
@@ -70,48 +195,54 @@ namespace Telegram {
     }
 
     void Client::sendAdvert(const Kufar::Ad &ad, optional<int> threadID) const {
-        const string text = formatAdvert(ad);
         const int32_t threadIDValue = messageThreadID(threadID);
         const TgBot::Api &api = bot_->getApi();
+        const TgBot::InlineKeyboardMarkup::Ptr keyboard = advertKeyboard(ad);
+        const size_t imageCount = min(ad.images.size(), MAX_IMAGES_IN_GROUP);
 
-        if (ad.images.empty()) {
-            // sendMediaGroup requires 2-10 images, and sendPhoto with
-            // a nonexistent placeholder URL always failed.
-            TgBot::SendMessageArgs args;
+        // Albums cannot carry reply_markup, so their caption includes a
+        // clickable link instead of a button.
+        const string text = formatAdvert(ad, imageCount > 1, imageCount > 0 ? 400 : 1200);
+
+        if (imageCount > 1) {
+            TgBot::SendMediaGroupArgs args;
             args.chatId = configuration_.chatID;
-            args.text = text;
             args.messageThreadId = threadIDValue;
-            api.sendMessage(args);
+            args.media.reserve(imageCount);
+
+            for (size_t i = 0; i < imageCount; i++) {
+                auto photo = make_shared<TgBot::InputMediaPhoto>();
+                photo->media = ad.images[i];
+                if (i == 0) {
+                    photo->caption = text;
+                    photo->parseMode = "HTML";
+                }
+                args.media.push_back(photo);
+            }
+
+            api.sendMediaGroup(args);
             return;
         }
 
-        if (ad.images.size() == 1) {
+        if (imageCount == 1) {
             TgBot::SendPhotoArgs args;
             args.chatId = configuration_.chatID;
             args.photo = ad.images.front();
             args.caption = text;
+            args.parseMode = "HTML";
+            args.replyMarkup = keyboard;
             args.messageThreadId = threadIDValue;
             api.sendPhoto(args);
             return;
         }
 
-        TgBot::SendMediaGroupArgs args;
+        TgBot::SendMessageArgs args;
         args.chatId = configuration_.chatID;
+        args.text = text;
+        args.parseMode = "HTML";
+        args.replyMarkup = keyboard;
         args.messageThreadId = threadIDValue;
-
-        const size_t imageCount = min(ad.images.size(), MAX_IMAGES_IN_GROUP);
-        args.media.reserve(imageCount);
-
-        for (size_t i = 0; i < imageCount; i++) {
-            auto photo = make_shared<TgBot::InputMediaPhoto>();
-            photo->media = ad.images[i];
-            if (i == 0) {
-                photo->caption = text;
-            }
-            args.media.push_back(photo);
-        }
-
-        api.sendMediaGroup(args);
+        api.sendMessage(args);
     }
 
     void Client::startPolling() {

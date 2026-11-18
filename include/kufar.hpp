@@ -504,7 +504,19 @@ namespace Kufar {
         bool phoneNumberIsVisible;
         std::string link;
         std::vector<std::string> images;
+
+        // Filled from the listing page when the bot sends a new ad.
+        std::string description;
+        std::string region;
+        std::string area;
+        std::string sellerID;
+        std::string sellerProfileLink;
     };
+
+    // Loads description and seller details from the listing page.
+    // Throws when the page cannot be fetched or parsed; the caller
+    // may still send the ad without the extra fields.
+    void enrichAdFromPage(Ad &ad);
 
     struct PriceRange {
         std::optional<int> priceMin;

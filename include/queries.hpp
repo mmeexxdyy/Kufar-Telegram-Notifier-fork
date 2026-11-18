@@ -26,11 +26,22 @@ namespace queries {
         QueryID id;
         Kufar::KufarConfiguration kufar;
         std::optional<int> messageThreadID;
+        // Disabled queries stay in the configuration but are not polled.
+        bool enabled = true;
 
         std::string cacheKey() const;  
         std::string getDescription() const;
         std::string getDescriptionConcise() const;
+        // One-line summary for the Telegram menu.
+        std::string shortDescription() const;
     };
+
+    // Formats a price range as "100–500 BYN", "от 100 BYN" or "до 500 BYN".
+    std::string formatPriceRange(const Kufar::PriceRange &priceRange);
+
+    // Renders a query title as a hashtag when it is a single word,
+    // and as plain text otherwise.
+    std::string formatTag(const std::string &tag);
 
     QueryConfiguration parseQuery(const nlohmann::json &query);
     std::string describeQuery(const QueryConfiguration &query);
@@ -41,10 +52,13 @@ namespace queries {
 
             std::vector<QueryConfiguration> getQueries() const;
             nlohmann::json getRawQueries() const;
+            nlohmann::json getRawQuery(size_t index) const;
             int queryCount() const;
 
             void add(nlohmann::json &query);
             std::optional<QueryConfiguration> remove(QueryID id);
+            void update(size_t index, const nlohmann::json &query);
+            void remove(size_t index);
 
         private:
             std::string path_;

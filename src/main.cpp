@@ -6,7 +6,6 @@
 //
 
 #include <iostream>
-#include <unistd.h>
 #include <signal.h>
 #include <fstream>
 #include <map>
@@ -269,6 +268,11 @@ int main(int argc, char **argv) {
 
     while (true) {
         for (const auto &requestConfiguration : queryStore.getQueries()) {
+            if (!requestConfiguration.enabled) {
+                DEBUG_MSG("(Query) Skipping disabled query, topic: {}", requestConfiguration.cacheKey());
+                continue;
+            }
+
             const string cacheKey = requestConfiguration.cacheKey();
             vector<int> &viewedAds = cacheBuckets[cacheKey];
             
@@ -285,7 +289,15 @@ int main(int argc, char **argv) {
                         );
 
                         try {
-                            telegramClient.sendAdvert(advert, requestConfiguration.messageThreadID);
+                            Kufar::Ad detailedAd = advert;
+                            try {
+                                enrichAdFromPage(detailedAd);
+                            } catch (const exception &exc) {
+                                // The card is still useful without the page data.
+                                spdlog::warn("(enrichAd) [ID: {}]: {}", advert.id, exc.what());
+                            }
+
+                            telegramClient.sendAdvert(detailedAd, requestConfiguration.messageThreadID);
                             // Only ads that were actually sent are added to the cache.
                             viewedAds.push_back(advert.id);
                             saveFile(programConfiguration.files.cache.path, cacheBucketsToJSON(cacheBuckets).dump());
@@ -296,16 +308,16 @@ int main(int argc, char **argv) {
                     } else {
                         //spdlog::debug("[Already was!]");
                     }
-                    usleep(300000); // 0.3s
+                    sleepMilliseconds(300);
                 }
             } catch (const exception &exc) {
                 spdlog::error("(getAds): {}", exc.what());
             }
             DEBUG_MSG("(QueryDelay) Sleeping for: {}s.", programConfiguration.queryDelaySeconds);
-            sleep(programConfiguration.queryDelaySeconds);
+            sleepSeconds(programConfiguration.queryDelaySeconds);
         }
         DEBUG_MSG("(LoopDelay) Sleeping for: {}s.", programConfiguration.loopDelaySeconds);
-        sleep(programConfiguration.loopDelaySeconds);
+        sleepSeconds(programConfiguration.loopDelaySeconds);
     }
     return 0;
 }
